@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>3D Sword Arena — Deluxe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; touch-action:none; }
+html, body { width:100%; height:100%; overflow:hidden; background:#050508; font-family:'Rajdhani',sans-serif; color:#fff; }
+#canvas-container { position:absolute; inset:0; z-index:1; }
+
+#crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:16px; height:16px; pointer-events:none; z-index:10; display:none; }
+#crosshair::before, #crosshair::after { content:''; position:absolute; background:rgba(0,240,255,.8); box-shadow:0 0 8px rgba(0,240,255,.8); }
+#crosshair::before { top:7px; left:0; width:16px; height:2px; }
+#crosshair::after { top:0; left:7px; width:2px; height:16px; }
+#crosshair.hit::before, #crosshair.hit::after { background:#ff2a2a; box-shadow:0 0 10px #ff2a2a; }
+
+#menu-overlay { position:absolute; inset:0; background:linear-gradient(135deg,#ff1e38 0%,#8b0000 50%,#4a000d 100%); z-index:100; display:flex; flex-direction:column; justify-content:center; align-items:center; transition:opacity .4s ease; }
+.menu-card { background:rgba(15,12,15,.85); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid rgba(255,215,0,.3); box-shadow:0 0 60px rgba(0,0,0,.9), inset 0 0 20px rgba(255,50,50,.15); padding:40px 50px; border-radius:12px; text-align:center; max-width:480px; width:90%; }
+.menu-card h1 { font-family:'Cinzel',serif; font-size:38px; font-weight:900; letter-spacing:4px; color:#ffd700; text-shadow:0 0 20px rgba(255,215,0,.5); margin-bottom:10px; }
+.menu-card p { font-size:15px; color:#d1d5db; margin-bottom:25px; line-height:1.5; }
+.menu-btn { display:block; width:100%; background:linear-gradient(135deg,#ffd700,#ff8c00); color:#000; font-family:'Cinzel',serif; font-size:17px; font-weight:700; padding:14px 0; border-radius:6px; letter-spacing:2px; cursor:pointer; border:none; box-shadow:0 0 20px rgba(255,215,0,.4); transition:transform .2s ease, box-shadow .2s ease; margin-bottom:12px; }
+.menu-btn:hover { transform:scale(1.03); box-shadow:0 0 30px rgba(255,215,0,.7); }
+.menu-btn.secondary { background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.2); box-shadow:none; }
+.menu-btn.secondary:hover { background:rgba(255,255,255,.2); }
+#settings-screen, #over-screen { display:none; }
+.setting-group { margin-bottom:20px; text-align:left; }
+.setting-group label { display:flex; justify-content:space-between; font-size:15px; font-weight:600; color:#ffd700; margin-bottom:8px; letter-spacing:1px; }
+.setting-group input[type=range] { width:100%; accent-color:#ffd700; cursor:pointer; }
+
+#hud { position:absolute; inset:0; pointer-events:none; z-index:5; display:none; flex-direction:column; justify-content:space-between; padding:25px 35px; }
+.hud-top { display:flex; justify-content:space-between; align-items:flex-start; }
+.status-box, .score-box { background:rgba(15,18,28,.75); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.15); padding:12px 20px; border-radius:4px; }
+.status-box { border-left:4px solid #ff3b3b; min-width:240px; }
+.score-box { border-right:4px solid #00f0ff; text-align:right; }
+.hud-title { font-family:'Cinzel',serif; font-size:13px; letter-spacing:2px; color:#8a99ad; margin-bottom:6px; }
+.hp-bar-bg { width:100%; height:12px; background:rgba(255,255,255,.1); border-radius:2px; overflow:hidden; }
+.hp-bar-fill { width:100%; height:100%; background:linear-gradient(90deg,#d32f2f,#ff5252); transition:width .15s ease-out; }
+.hp-text { font-size:16px; font-weight:700; margin-top:4px; }
+.speed-box { align-self:center; background:rgba(15,18,28,.75); border:1px solid rgba(255,255,255,.15); border-bottom:3px solid #ffd700; border-radius:4px; padding:6px 22px; font-family:'Cinzel',serif; font-size:16px; letter-spacing:2px; color:#ffd700; }
+.score-val { font-family:'Cinzel',serif; font-size:28px; font-weight:900; color:#00f0ff; }
+
+#vignette { position:absolute; inset:0; pointer-events:none; z-index:4; box-shadow:inset 0 0 100px rgba(255,0,0,0); transition:box-shadow .1s ease-out; }
+#vignette.hit { box-shadow:inset 0 0 100px rgba(255,0,0,.7); }
+
+#mobile-controls { position:absolute; inset:0; z-index:8; pointer-events:none; display:none; }
+#joystick-zone { position:absolute; bottom:40px; left:40px; width:130px; height:130px; background:rgba(255,255,255,.08); border:2px solid rgba(255,255,255,.2); border-radius:50%; pointer-events:auto; }
+#joystick-knob { position:absolute; top:40px; left:40px; width:50px; height:50px; background:rgba(255,215,0,.6); border-radius:50%; pointer-events:none; }
+.mobile-action-btn { position:absolute; bottom:40px; width:75px; height:75px; border-radius:50%; background:rgba(20,24,36,.75); border:2px solid rgba(255,215,0,.4); color:#ffd700; font-family:'Cinzel',serif; font-weight:700; font-size:13px; display:flex; justify-content:center; align-items:center; pointer-events:auto; box-shadow:0 4px 15px rgba(0,0,0,.5); }
+#btn-attack { right:40px; background:rgba(211,47,47,.6); border-color:#ff5252; color:#fff; font-size:14px; }
+#btn-block { right:135px; }
+#btn-jump { right:40px; bottom:130px; }
+
+#music-btn { position:fixed; top:14px; left:50%; transform:translateX(-50%); width:46px; height:46px; border-radius:50%; background:rgba(15,12,15,.85); border:1px solid rgba(255,215,0,.5); color:#ffd700; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:150; box-shadow:0 0 18px rgba(0,0,0,.6); }
+#music-btn:hover { box-shadow:0 0 18px rgba(255,215,0,.5); }
+#music-btn.playing { background:#ffd700; color:#000; }
+#music-btn svg { width:22px; height:22px; fill:currentColor; }
+#music-panel { position:fixed; top:70px; left:50%; width:360px; max-width:92vw; max-height:calc(100% - 90px); overflow-y:auto; transform:translateX(-50%); background:rgba(15,12,15,.94); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border:1px solid rgba(255,215,0,.3); border-radius:12px; padding:18px; z-index:160; box-shadow:0 0 50px rgba(0,0,0,.9); opacity:0; visibility:hidden; pointer-events:none; transition:opacity .2s ease; }
+#music-panel.open { opacity:1; visibility:visible; pointer-events:auto; }
+.mp-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-family:'Cinzel',serif; font-size:18px; letter-spacing:3px; color:#ffd700; }
+.mp-close { background:none; border:none; color:#fff; font-size:26px; line-height:1; cursor:pointer; padding:0 4px; }
+.mp-row { display:flex; gap:8px; }
+#music-panel input { flex:1; min-width:0; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2); border-radius:6px; color:#fff; font:600 15px 'Rajdhani',sans-serif; padding:10px 12px; user-select:text; -webkit-user-select:text; touch-action:auto; }
+#music-panel input:focus { outline:none; border-color:#ffd700; }
+.mp-btn { background:linear-gradient(135deg,#ffd700,#ff8c00); color:#000; border:none; border-radius:6px; font:700 14px 'Cinzel',serif; letter-spacing:1px; padding:0 14px; cursor:pointer; }
+.mp-btn.secondary { background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.2); padding:9px 14px; margin-top:12px; width:100%; }
+#mp-error { color:#ff6b6b; font-size:14px; margin-top:8px; min-height:0; }
+#mp-info { display:none; gap:12px; align-items:center; margin-top:14px; padding:10px; background:rgba(255,255,255,.06); border-radius:8px; }
+#mp-info.show { display:flex; }
+#mp-cover { width:64px; height:64px; border-radius:6px; object-fit:cover; background:#222; flex:none; }
+#mp-text { min-width:0; }
+#mp-title { font-size:16px; font-weight:700; color:#fff; overflow-wrap:anywhere; }
+#mp-author { font-size:14px; color:#d1d5db; }
+#mp-meta { font-size:12px; color:#ffd700; letter-spacing:1px; margin-top:3px; }
+#mp-player { margin-top:12px; }
+#mp-player iframe { width:100%; border:0; border-radius:8px; display:block; }
+.mp-hint { font-size:13px; color:#8a99ad; margin-top:10px; line-height:1.4; }
+
+#online-screen { display:none; }
+.menu-card input[type=text] { width:100%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2); border-radius:6px; color:#fff; font:600 16px 'Rajdhani',sans-serif; padding:11px 12px; user-select:text; -webkit-user-select:text; touch-action:auto; }
+.menu-card input[type=text]:focus { outline:none; border-color:#ffd700; }
+#net-status { min-height:20px; margin-bottom:12px; font-size:14px; color:#ff8a8a; }
+#feed { position:absolute; top:105px; left:35px; display:flex; flex-direction:column; gap:4px; font-size:14px; font-weight:700; }
+#feed div { background:rgba(15,18,28,.75); border-left:3px solid #ff3b3b; padding:3px 10px; border-radius:3px; }
+#lb { position:absolute; top:105px; right:35px; min-width:170px; background:rgba(15,18,28,.75); border:1px solid rgba(255,255,255,.15); border-radius:4px; padding:8px 12px; font-size:14px; font-weight:700; display:none; pointer-events:auto; }
+#lb .row { display:flex; justify-content:space-between; gap:12px; color:#d1d5db; }
+#lb .row.me { color:#ffd700; }
+#lb .row span:last-child { color:#8a99ad; font-weight:600; }
+#lb-exit { margin-top:6px; width:100%; background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.2); border-radius:4px; font:700 12px 'Cinzel',serif; padding:5px; cursor:pointer; }
+#dead-banner { position:absolute; top:32%; left:0; width:100%; text-align:center; font:900 34px 'Cinzel',serif; color:#ff5252; text-shadow:0 0 20px rgba(0,0,0,.9); z-index:20; pointer-events:none; display:none; }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+<div id="crosshair"></div>
+<div id="dead-banner"></div>
+<div id="vignette"></div>
+
+<div id="mobile-controls">
+    <div id="joystick-zone"><div id="joystick-knob"></div></div>
+    <div id="btn-block" class="mobile-action-btn">БЛОК</div>
+    <div id="btn-attack" class="mobile-action-btn">УДАР</div>
+    <div id="btn-jump" class="mobile-action-btn">ПРЫЖОК</div>
+</div>
+
+<div id="menu-overlay">
+    <div id="main-menu" class="menu-card">
+        <h1>SWORD ARENA</h1>
+        <p>Захватывающие дуэли на мечах против ботов от первого лица. Проверьте свои навыки выживания!</p>
+        <button class="menu-btn" id="btn-start">ИГРАТЬ</button>
+        <button class="menu-btn" id="btn-online">ОНЛАЙН ДЕДМАТЧ</button>
+        <button class="menu-btn secondary" id="btn-settings">НАСТРОЙКИ</button>
+    </div>
+
+    <div id="online-screen" class="menu-card">
+        <h1>ДЕДМАТЧ</h1>
+        <p>Сражайтесь с реальными игроками. Адрес сервера — там, где запущен server.js.</p>
+        <div class="setting-group"><label for="net-name">ИМЯ</label><input type="text" id="net-name" maxlength="14" placeholder="Игрок" autocomplete="off"></div>
+        <div class="setting-group"><label for="net-url">СЕРВЕР</label><input type="text" id="net-url" autocomplete="off" autocapitalize="off"></div>
+        <div id="net-status"></div>
+        <button class="menu-btn" id="btn-connect">ПОДКЛЮЧИТЬСЯ</button>
+        <button class="menu-btn secondary" id="btn-online-back">НАЗАД</button>
+    </div>
+
+    <div id="settings-screen" class="menu-card">
+        <h1>НАСТРОЙКИ</h1>
+        <p>Настройте чувствительность управления под себя.</p>
+        <div class="setting-group">
+            <label for="sens-range">ЧУВСТВИТЕЛЬНОСТЬ: <span id="sens-val">2.2</span></label>
+            <input type="range" id="sens-range" min="0.5" max="5.0" step="0.1" value="2.2">
+        </div>
+        <button class="menu-btn" id="btn-back">НАЗАД</button>
+    </div>
+
+    <div id="over-screen" class="menu-card">
+        <h1>ПОРАЖЕНИЕ</h1>
+        <p>Уничтожено ботов: <b id="over-score">0</b></p>
+        <button class="menu-btn" id="btn-restart">ИГРАТЬ ЕЩЁ РАЗ</button>
+    </div>
+</div>
+
+<div id="hud">
+    <div class="hud-top">
+        <div class="status-box">
+            <div class="hud-title">ЗДОРОВЬЕ</div>
+            <div class="hp-bar-bg"><div id="hp-fill" class="hp-bar-fill"></div></div>
+            <div id="hp-text" class="hp-text">100 / 100</div>
+        </div>
+        <div class="score-box">
+            <div class="hud-title">УБИТО БОТОВ</div>
+            <div id="score-val" class="score-val">0</div>
+        </div>
+    </div>
+    <div id="feed"></div>
+    <div id="lb"><div class="hud-title">ИГРОКИ · УБ / СМ</div><div id="lb-rows"></div><button id="lb-exit">ВЫЙТИ</button></div>
+    <div class="speed-box">СКОРОСТЬ <span id="speed-val">x1.0</span></div>
+</div>
+
+
+<button id="music-btn" aria-label="Музыка" title="Музыка (M)">
+    <svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+</button>
+<div id="music-panel">
+    <div class="mp-head"><span>МУЗЫКА</span><button class="mp-close" id="mp-close" aria-label="Закрыть">&times;</button></div>
+    <div class="mp-row">
+        <input id="mp-input" type="text" inputmode="url" autocomplete="off" placeholder="Ссылка YouTube / YT Music / Spotify">
+        <button class="mp-btn" id="mp-play">ИГРАТЬ</button>
+    </div>
+    <div id="mp-error"></div>
+    <div id="mp-info">
+        <img id="mp-cover" alt="">
+        <div id="mp-text">
+            <div id="mp-title"></div>
+            <div id="mp-author"></div>
+            <div id="mp-meta"></div>
+        </div>
+    </div>
+    <div id="mp-player"></div>
+    <button class="mp-btn secondary" id="mp-stop" style="display:none">ОСТАНОВИТЬ И УБРАТЬ</button>
+    <div class="mp-hint">Игра ставится на паузу, пока меню открыто. Музыка продолжает играть после закрытия. Горячая клавиша: M.</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const isMobile = window.matchMedia('(pointer: coarse)').matches;
+
+/* ---------- Состояние ---------- */
+const ARENA_LIMIT = 33;      // граница движения внутри стен
+const EYE_HEIGHT  = 1.7;
+const PLAT_TOP_R = 8, PLAT_BOT_R = 10, PLAT_H = 1.5;   // платформа: радиусы и высота
+const SPAWN = { x: 0, z: 15 };
+const GRAVITY = 26, JUMP_SPEED = 8.5;   // высота прыжка ~1.4 м
+const BHOP_STEP = 0.15, BHOP_MAX = 2.0, BHOP_WINDOW = 0.15;   // бонус скорости за прыжок, потолок, окно «на лету» (сек)
+
+let gameStarted = false;
+let paused = false;   // меню музыки открыто
+const net = { on: false, ws: null, id: null, spawn: null, dead: false, sendAcc: 0, remotes: new Map() };
+let sensitivity = 0.0022;
+const gameState = { score: 0, playerHp: 100, maxHp: 100, isBlocking: false, isAttacking: false, attackCooldown: false, over: false };
+
+/* ---------- Меню ---------- */
+const menuOverlay = $('menu-overlay'), mainMenu = $('main-menu'), settingsScreen = $('settings-screen'), overScreen = $('over-screen');
+if (isMobile) $('mobile-controls').style.display = 'block';
+
+$('btn-settings').onclick = () => { mainMenu.style.display = 'none'; settingsScreen.style.display = 'block'; };
+$('btn-back').onclick = () => { settingsScreen.style.display = 'none'; mainMenu.style.display = 'block'; };
+$('btn-online').onclick = () => { mainMenu.style.display = 'none'; $('online-screen').style.display = 'block'; };
+$('btn-online-back').onclick = () => { $('online-screen').style.display = 'none'; mainMenu.style.display = 'block'; };
+$('sens-range').addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    $('sens-val').innerText = v.toFixed(1);
+    sensitivity = 0.001 * v;
+});
+
+/* ---------- Сцена ---------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07090f);
+scene.fog = new THREE.FogExp2(0x07090f, 0.02);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+$('canvas-container').appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0x404555, 0.9));
+const dirLight = new THREE.DirectionalLight(0xffdfa0, 1.3);
+dirLight.position.set(20, 40, 20);
+dirLight.castShadow = true;
+scene.add(dirLight);
+const fire = new THREE.PointLight(0xff7700, 2, 30);
+fire.position.set(0, 6, 0);
+scene.add(fire);
+
+/* ---------- Коллизии и высота ---------- */
+const colliders = [];
+const addBox = (x, z, sizeX, sizeZ) => colliders.push({ type: 'box', x, z, sizeX, sizeZ });
+const addCyl = (x, z, radius) => colliders.push({ type: 'cylinder', x, z, radius });
+
+// Высота поверхности под точкой (платформа — walkable, со скосом по краю)
+function getSurfaceHeight(x, z) {
+    const r = Math.hypot(x, z);
+    if (r <= PLAT_TOP_R) return PLAT_H;
+    if (r >= PLAT_BOT_R) return 0;
+    return PLAT_H * (PLAT_BOT_R - r) / (PLAT_BOT_R - PLAT_TOP_R);
+}
+
+function checkCollision(x, z, radius) {
+    for (const c of colliders) {
+        if (c.type === 'box') {
+            if (Math.abs(x - c.x) <= c.sizeX / 2 + radius && Math.abs(z - c.z) <= c.sizeZ / 2 + radius) return true;
+        } else if (Math.hypot(x - c.x, z - c.z) < c.radius + radius) return true;
+    }
+    return false;
+}
+
+function resolveCollisions(pos, radius) {
+    for (const c of colliders) {
+        if (c.type === 'box') {
+            const minX = c.x - c.sizeX / 2 - radius, maxX = c.x + c.sizeX / 2 + radius;
+            const minZ = c.z - c.sizeZ / 2 - radius, maxZ = c.z + c.sizeZ / 2 + radius;
+            if (pos.x > minX && pos.x < maxX && pos.z > minZ && pos.z < maxZ) {
+                const l = pos.x - minX, r = maxX - pos.x, t = pos.z - minZ, b = maxZ - pos.z;
+                const m = Math.min(l, r, t, b);
+                if (m === l) pos.x = minX; else if (m === r) pos.x = maxX; else if (m === t) pos.z = minZ; else pos.z = maxZ;
+            }
+        } else {
+            let dx = pos.x - c.x, dz = pos.z - c.z;
+            let d = Math.hypot(dx, dz);
+            const minD = c.radius + radius;
+            if (d < minD) {
+                if (d < 0.0001) { dx = 1; dz = 0; d = 1; }
+                pos.x = c.x + dx / d * minD;
+                pos.z = c.z + dz / d * minD;
+            }
+        }
+    }
+}
+
+/* ---------- Арена ---------- */
+(function createArena() {
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x2d323e, roughness: 0.8, metalness: 0.2 });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1d24, roughness: 0.9, metalness: 0.1, side: THREE.DoubleSide });
+    const trimMat  = new THREE.MeshStandardMaterial({ color: 0x8a6d3b, roughness: 0.5, metalness: 0.6 });
+
+    // Большой двусторонний пол: даже если камера окажется ниже, пустоты не будет
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    [
+        { x: 0, z: -35, sx: 72, sz: 2 }, { x: 0, z: 35, sx: 72, sz: 2 },
+        { x: -35, z: 0, sx: 2, sz: 72 }, { x: 35, z: 0, sx: 2, sz: 72 }
+    ].forEach(p => {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(p.sx, 10, p.sz), stoneMat);
+        wall.position.set(p.x, 5, p.z);
+        wall.castShadow = true;
+        scene.add(wall);
+        addBox(p.x, p.z, p.sx, p.sz);
+    });
+
+    // Платформа по которой можно ходить (форма совпадает с getSurfaceHeight)
+    const plat = new THREE.Mesh(new THREE.CylinderGeometry(PLAT_TOP_R, PLAT_BOT_R, PLAT_H, 48), stoneMat);
+    plat.position.set(0, PLAT_H / 2, 0);
+    plat.receiveShadow = true;
+    scene.add(plat);
+
+    const centerCol = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.5, 8, 16), trimMat);
+    centerCol.position.set(0, PLAT_H + 4, 0);
+    centerCol.castShadow = true;
+    scene.add(centerCol);
+    addCyl(0, 0, 1.6);
+
+    [-18, 18].forEach(x => [-18, 18].forEach(z => {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(3, 8, 3), stoneMat);
+        pillar.position.set(x, 4, z);
+        pillar.castShadow = true;
+        scene.add(pillar);
+        addBox(x, z, 3, 3);
+    }));
+})();
+
+/* ---------- Игрок ---------- */
+// yaw крутит playerHolder, pitch — только камеру: наклон взгляда не влияет на позицию
+const player = { position: new THREE.Vector3(SPAWN.x, EYE_HEIGHT, SPAWN.z), yaw: 0, pitch: 0, speed: 7.2, runSpeed: 13, radius: 0.7, vy: 0, grounded: true, bhop: 1, groundTime: 999 };
+const playerHolder = new THREE.Group();
+playerHolder.position.copy(player.position);
+scene.add(playerHolder);
+playerHolder.add(camera);
+
+const swordGroup = new THREE.Group();
+const bladeMat  = new THREE.MeshStandardMaterial({ color: 0xddddee, metalness: 0.9, roughness: 0.2 });
+const hiltMat   = new THREE.MeshStandardMaterial({ color: 0xb8860b, metalness: 0.8 });
+const handleMat = new THREE.MeshStandardMaterial({ color: 0x3a1e05 });
+const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.1, 0.02), bladeMat); blade.position.y = 0.65;
+const guard = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.06), hiltMat); guard.position.y = 0.12;
+const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.2, 8), handleMat); handle.position.y = 0.01;
+swordGroup.add(blade, guard, handle);
+swordGroup.position.set(0.35, -0.3, -0.55);
+swordGroup.rotation.set(0.1, -0.2, -0.1);
+playerHolder.add(swordGroup);
+
+function applyLook() {
+    player.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, player.pitch));
+    playerHolder.rotation.y = player.yaw;
+    camera.rotation.x = player.pitch;
+}
+
+/* ---------- Боты ---------- */
+const bots = [];
+const botMaterial = new THREE.MeshStandardMaterial({ color: 0xc92a2a, roughness: 0.5 });
+const botArmorMat = new THREE.MeshStandardMaterial({ color: 0x343a40, metalness: 0.8 });
+let respawnTimers = [];
+
+function spawnBot() {
+    if (gameState.over) return;
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.3, 1.4, 8), botArmorMat); body.position.y = 0.9;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), botMaterial); head.position.y = 1.8;
+    body.castShadow = head.castShadow = true;
+    group.add(body, head);
+
+    let x = 0, z = -20, ok = false;
+    for (let i = 0; i < 40 && !ok; i++) {
+        const a = Math.random() * Math.PI * 2, d = 14 + Math.random() * 18;
+        x = Math.cos(a) * d; z = Math.sin(a) * d;
+        ok = Math.abs(x) < ARENA_LIMIT && Math.abs(z) < ARENA_LIMIT && !checkCollision(x, z, 1.0) && Math.hypot(x - player.position.x, z - player.position.z) > 10;
+    }
+    group.position.set(x, getSurfaceHeight(x, z), z);
+    scene.add(group);
+    bots.push({ mesh: group, hp: 100, radius: 0.6, speed: 3.3 + Math.random() * 1.2, attackCooldown: false });
+}
+
+function clearBots() {
+    respawnTimers.forEach(clearTimeout);
+    respawnTimers = [];
+    bots.forEach(b => scene.remove(b.mesh));
+    bots.length = 0;
+}
+
+/* ---------- Старт / рестарт ---------- */
+function resetGame() {
+    clearBots();
+    Object.assign(gameState, { score: 0, playerHp: 100, isBlocking: false, isAttacking: false, attackCooldown: false, over: false });
+    $('score-val').innerText = '0';
+    $('hp-fill').style.width = '100%';
+    $('hp-text').innerText = `${gameState.maxHp} / ${gameState.maxHp}`;
+    player.yaw = 0; player.pitch = 0; player.vy = 0; player.grounded = true; player.bhop = 1; player.groundTime = 999;
+    const sp = net.on && net.spawn ? net.spawn : SPAWN;
+    player.position.set(sp.x, getSurfaceHeight(sp.x, sp.z) + EYE_HEIGHT, sp.z);
+    playerHolder.position.copy(player.position);
+    applyLook();
+    if (!net.on) for (let i = 0; i < 3; i++) spawnBot();
+}
+
+function startGame() {
+    menuOverlay.style.opacity = '0';
+    setTimeout(() => {
+        menuOverlay.style.display = 'none';
+        $('hud').style.display = 'flex';
+        $('crosshair').style.display = 'block';
+        if (!isMobile) document.body.requestPointerLock();
+        resetGame();
+        gameStarted = true;
+    }, 400);
+}
+$('btn-start').onclick = startGame;
+$('btn-restart').onclick = () => {
+    overScreen.style.display = 'none';
+    mainMenu.style.display = 'block';
+    startGame();
+};
+
+let mobileJump = false;   // кнопка прыжка на телефоне зажата
+function tryJump() {
+    if (!gameStarted || gameState.over || !player.grounded) return;
+    // прыгнули сразу после приземления — цепочка bhop, скорость растёт
+    player.bhop = player.groundTime < BHOP_WINDOW ? Math.min(BHOP_MAX, player.bhop + BHOP_STEP) : 1;
+    player.vy = JUMP_SPEED;
+    player.grounded = false;
+}
+
+/* ---------- Ввод: клавиатура и мышь ---------- */
+const keys = {};
+document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;   // печатаем ссылку — игра не реагирует
+    if (e.code === 'KeyM') { toggleMusic(); return; }
+    keys[e.code] = true;
+    if (e.code === 'KeyE') gameState.isBlocking = true;
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) tryJump(); }
+});
+document.addEventListener('keyup', e => {
+    keys[e.code] = false;
+    if (e.code === 'KeyE') gameState.isBlocking = false;
+});
+document.addEventListener('mousedown', e => {
+    if (e.target.closest('#music-panel, #music-btn')) return;
+    if (!gameStarted || isMobile || gameState.over || paused) return;
+    if (!document.pointerLockElement) { document.body.requestPointerLock(); return; }
+    if (e.button === 0) swingSword();
+    else if (e.button === 2) gameState.isBlocking = true;
+});
+document.addEventListener('mouseup', e => { if (e.button === 2 && !isMobile) gameState.isBlocking = false; });
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('mousemove', e => {
+    if (document.pointerLockElement !== document.body || !gameStarted || gameState.over) return;
+    player.yaw   -= e.movementX * sensitivity;
+    player.pitch -= e.movementY * sensitivity;
+    applyLook();
+});
+
+/* ---------- Ввод: тачскрин ---------- */
+const moveVector = new THREE.Vector3();
+if (isMobile) {
+    const zone = $('joystick-zone'), knob = $('joystick-knob');
+    let joyId = null, lookId = null, lastX = 0, lastY = 0;
+    const center = { x: 0, y: 0 };
+
+    zone.addEventListener('touchstart', e => {
+        const t = e.changedTouches[0];
+        joyId = t.identifier;
+        const r = zone.getBoundingClientRect();
+        center.x = r.left + r.width / 2; center.y = r.top + r.height / 2;
+    });
+    zone.addEventListener('touchmove', e => {
+        for (const t of e.changedTouches) if (t.identifier === joyId) {
+            let dx = t.clientX - center.x, dy = t.clientY - center.y;
+            const d = Math.hypot(dx, dy), max = 45;
+            if (d > max) { dx = dx / d * max; dy = dy / d * max; }
+            knob.style.transform = `translate(${dx}px, ${dy}px)`;
+            moveVector.set(dx / max, 0, dy / max);
+        }
+    });
+    const endJoy = e => {
+        for (const t of e.changedTouches) if (t.identifier === joyId) {
+            joyId = null; knob.style.transform = 'translate(0,0)'; moveVector.set(0, 0, 0);
+        }
+    };
+    zone.addEventListener('touchend', endJoy);
+    zone.addEventListener('touchcancel', endJoy);
+
+    const btnAttack = $('btn-attack'), btnBlock = $('btn-block');
+    btnAttack.addEventListener('touchstart', () => { if (gameStarted && !gameState.over) swingSword(); });
+    const blockOn  = () => { gameState.isBlocking = true;  btnBlock.style.background = '#ffd700'; btnBlock.style.color = '#000'; };
+    const blockOff = () => { gameState.isBlocking = false; btnBlock.style.background = 'rgba(20,24,36,.75)'; btnBlock.style.color = '#ffd700'; };
+    const btnJump = $('btn-jump');
+    btnJump.addEventListener('touchstart', () => { mobileJump = true; tryJump(); });
+    btnJump.addEventListener('touchend', () => mobileJump = false);
+    btnJump.addEventListener('touchcancel', () => mobileJump = false);
+    btnBlock.addEventListener('touchstart', blockOn);
+    btnBlock.addEventListener('touchend', blockOff);
+    btnBlock.addEventListener('touchcancel', blockOff);
+
+    // Поворот камеры — отдельный палец, не путается с джойстиком
+    const isUi = el => el.closest('#joystick-zone, .mobile-action-btn, #music-btn, #music-panel');
+    document.addEventListener('touchstart', e => {
+        if (!gameStarted || gameState.over) return;
+        for (const t of e.changedTouches) {
+            if (lookId === null && !isUi(t.target)) { lookId = t.identifier; lastX = t.clientX; lastY = t.clientY; }
+        }
+    });
+    document.addEventListener('touchmove', e => {
+        if (!gameStarted || gameState.over) return;
+        for (const t of e.changedTouches) if (t.identifier === lookId) {
+            player.yaw   -= (t.clientX - lastX) * sensitivity * 1.5;
+            player.pitch -= (t.clientY - lastY) * sensitivity * 1.5;
+            applyLook();
+            lastX = t.clientX; lastY = t.clientY;
+        }
+    });
+    const endLook = e => { for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null; };
+    document.addEventListener('touchend', endLook);
+    document.addEventListener('touchcancel', endLook);
+}
+
+/* ---------- Бой ---------- */
+let swingProgress = 0;
+function swingSword() {
+    if (gameState.attackCooldown || gameState.isBlocking || gameState.over || paused || net.dead) return;
+    gameState.isAttacking = true;
+    gameState.attackCooldown = true;
+    swingProgress = 0;
+    if (net.on) netSend({ t: 'attack' });
+
+    setTimeout(() => {
+        if (gameState.over) return;
+        const look = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+        let hit = false;
+        for (const bot of bots.slice()) {
+            const to = new THREE.Vector3(bot.mesh.position.x - player.position.x, 0, bot.mesh.position.z - player.position.z);
+            const dist = to.length();
+            if (dist > 2.8) continue;
+            if (dist > 0.5 && to.normalize().dot(look) < 0.2) continue;   // бот должен быть перед игроком
+            hit = true;
+            bot.hp -= 45;
+            if (bot.hp <= 0) {
+                scene.remove(bot.mesh);
+                bots.splice(bots.indexOf(bot), 1);
+                $('score-val').innerText = ++gameState.score;
+                respawnTimers.push(setTimeout(spawnBot, 2000));
+            }
+        }
+        if (hit) {
+            $('crosshair').classList.add('hit');
+            setTimeout(() => $('crosshair').classList.remove('hit'), 150);
+        }
+    }, 120);
+
+    setTimeout(() => {
+        gameState.isAttacking = false;
+        setTimeout(() => gameState.attackCooldown = false, 150);
+    }, 320);
+}
+
+function takeDamage(amount) {
+    if (gameState.over || paused) return;
+    if (gameState.isBlocking) amount *= 0.2;
+    gameState.playerHp = Math.max(0, gameState.playerHp - amount);
+    $('hp-fill').style.width = (gameState.playerHp / gameState.maxHp * 100) + '%';
+    $('hp-text').innerText = `${Math.ceil(gameState.playerHp)} / ${gameState.maxHp}`;
+
+    const v = $('vignette');
+    v.classList.add('hit');
+    setTimeout(() => v.classList.remove('hit'), 150);
+
+    if (gameState.playerHp <= 0) gameOver();
+}
+
+function gameOver() {
+    gameState.over = true;
+    gameState.isBlocking = false;
+    clearBots();
+    if (document.pointerLockElement) document.exitPointerLock();
+    $('over-score').innerText = gameState.score;
+    $('hud').style.display = 'none';
+    $('crosshair').style.display = 'none';
+    mainMenu.style.display = 'none';
+    settingsScreen.style.display = 'none';
+    overScreen.style.display = 'block';
+    menuOverlay.style.display = 'flex';
+    requestAnimationFrame(() => menuOverlay.style.opacity = '1');
+}
+
+/* ---------- Музыка ---------- */
+const musicBtn = $('music-btn'), musicPanel = $('music-panel');
+const mpInput = $('mp-input'), mpError = $('mp-error'), mpInfo = $('mp-info'), mpPlayer = $('mp-player'), mpStop = $('mp-stop');
+let musicPlaying = false;
+
+function toggleMusic(force) {
+    const open = typeof force === 'boolean' ? force : !musicPanel.classList.contains('open');
+    musicPanel.classList.toggle('open', open);
+    if (open) {
+        paused = gameStarted && !gameState.over && !net.on;   // онлайн игру не остановить
+        for (const k in keys) keys[k] = false;
+        mobileJump = false; moveVector.set(0, 0, 0);
+        gameState.isBlocking = false;
+        if (document.pointerLockElement) document.exitPointerLock();
+    } else {
+        mpInput.blur();
+        paused = false;
+        if (!isMobile && gameStarted && !gameState.over) document.body.requestPointerLock();
+    }
+}
+musicBtn.addEventListener('click', () => toggleMusic());
+$('mp-close').addEventListener('click', () => toggleMusic(false));
+
+const SPOTIFY_TYPES = { track: 'Трек', album: 'Альбом', playlist: 'Плейлист', episode: 'Эпизод', show: 'Подкаст', artist: 'Исполнитель' };
+function spotifyInfo(type, id) {
+    return {
+        platform: 'Spotify', type: SPOTIFY_TYPES[type],
+        embed: `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0`,
+        height: (type === 'track' || type === 'episode') ? 152 : 352,
+        oembed: `https://open.spotify.com/oembed?url=${encodeURIComponent(`https://open.spotify.com/${type}/${id}`)}`
+    };
+}
+
+function parseMusicLink(raw) {
+    raw = raw.trim();
+    let m = raw.match(/^spotify:(track|album|playlist|episode|show|artist):([A-Za-z0-9]+)/);
+    if (m) return spotifyInfo(m[1], m[2]);
+    let u;
+    try { u = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw); } catch (e) { return null; }
+    const host = u.hostname.replace(/^(www|m)\./, '');
+
+    if (host === 'open.spotify.com') {
+        m = u.pathname.match(/\/(track|album|playlist|episode|show|artist)\/([A-Za-z0-9]+)/);
+        return m ? spotifyInfo(m[1], m[2]) : null;
+    }
+    if (host === 'youtu.be' || host.endsWith('youtube.com')) {
+        let id = host === 'youtu.be' ? u.pathname.slice(1) : u.searchParams.get('v');
+        if (!id && /^\/(shorts|embed|live)\//.test(u.pathname)) id = u.pathname.split('/')[2];
+        id = id && /^[\w-]{11}$/.test(id) ? id : null;
+        const list = u.searchParams.get('list');
+        if (!id && !list) return null;
+        const q = 'autoplay=1&rel=0&playsinline=1' + (list ? '&list=' + encodeURIComponent(list) : '');
+        return {
+            platform: host === 'music.youtube.com' ? 'YouTube Music' : 'YouTube',
+            type: id ? 'Трек' : 'Плейлист',
+            embed: id ? `https://www.youtube.com/embed/${id}?${q}` : `https://www.youtube.com/embed/videoseries?${q}`,
+            height: 0,   // 16:9
+            oembed: id ? `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}` : null
+        };
+    }
+    return null;
+}
+
+let musicToken = 0;   // чтобы запоздавший ответ от старой ссылки не перезаписал новую
+async function playMusic() {
+    const info = parseMusicLink(mpInput.value);
+    if (!info) { mpError.textContent = 'Не удалось распознать ссылку. Подойдут ссылки YouTube, YouTube Music и Spotify.'; return; }
+    mpError.textContent = '';
+    const token = ++musicToken;
+
+    // Плеер
+    mpPlayer.innerHTML = '';
+    const frame = document.createElement('iframe');
+    frame.src = info.embed;
+    frame.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+    frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    if (info.height) frame.style.height = info.height + 'px'; else frame.style.aspectRatio = '16 / 9';
+    mpPlayer.appendChild(frame);
+    mpStop.style.display = 'block';
+    musicBtn.classList.add('playing');
+    musicPlaying = true;
+
+    // Карточка с параметрами песни (показывается только здесь)
+    $('mp-title').textContent = 'Загрузка…';
+    $('mp-author').textContent = '';
+    $('mp-meta').textContent = `${info.platform} · ${info.type}`;
+    $('mp-cover').removeAttribute('src');
+    mpInfo.classList.add('show');
+    if (!info.oembed) { $('mp-title').textContent = `${info.type} ${info.platform}`; return; }
+    try {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 6000);
+        const r = await fetch(info.oembed, { signal: ctl.signal });
+        clearTimeout(t);
+        const d = await r.json();
+        if (token !== musicToken) return;
+        $('mp-title').textContent = d.title || 'Без названия';
+        $('mp-author').textContent = d.author_name || '';
+        if (d.thumbnail_url && d.thumbnail_url.startsWith('https://')) $('mp-cover').src = d.thumbnail_url;
+    } catch (e) {
+        if (token === musicToken) $('mp-title').textContent = `${info.type} ${info.platform}`;
+    }
+}
+$('mp-play').addEventListener('click', playMusic);
+mpInput.addEventListener('keydown', e => { if (e.key === 'Enter') playMusic(); });
+
+mpStop.addEventListener('click', () => {
+    musicToken++;
+    mpPlayer.innerHTML = '';
+    mpInfo.classList.remove('show');
+    mpStop.style.display = 'none';
+    musicBtn.classList.remove('playing');
+    musicPlaying = false;
+});
+
+/* ---------- Онлайн (WebSocket) ---------- */
+const defUrl = location.protocol.startsWith('http') ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host : 'ws://localhost:3000';
+$('net-url').value = defUrl;
+$('net-name').value = 'Игрок' + Math.floor(Math.random() * 900 + 100);
+
+const netSend = obj => { if (net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify(obj)); };
+const netStatus = t => $('net-status').textContent = t;
+const banner = t => { const b = $('dead-banner'); b.textContent = t || ''; b.style.display = t ? 'block' : 'none'; };
+
+$('btn-connect').onclick = () => {
+    let url = $('net-url').value.trim();
+    if (!/^wss?:\/\//i.test(url)) url = 'ws://' + url;
+    netStatus('Подключение…');
+    let ws;
+    try { ws = new WebSocket(url); } catch (e) { return netStatus('Неверный адрес сервера'); }
+    net.ws = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name: $('net-name').value.trim() || 'Игрок' }));
+    ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (err) { return; } onNetMessage(m); };
+    ws.onerror = () => { if (!net.on) netStatus('Не удалось подключиться. Сервер запущен? Адрес верный?'); };
+    ws.onclose = () => {
+        if (net.on) { net.dead = true; banner('СОЕДИНЕНИЕ ПОТЕРЯНО — ОБНОВИТЕ СТРАНИЦУ'); }
+        else netStatus('Сервер закрыл соединение (возможно, он полон)');
+    };
+};
+$('lb-exit').onclick = () => location.reload();
+
+function makeRemote(id, name) {
+    const col = new THREE.Color().setHSL((id * 0.17) % 1, 0.65, 0.45);
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.3, 1.4, 8), new THREE.MeshStandardMaterial({ color: col, roughness: 0.5, metalness: 0.4 }));
+    body.position.y = 0.9;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), new THREE.MeshStandardMaterial({ color: 0xe8c9a0, roughness: 0.6 }));
+    head.position.y = 1.8;
+    body.castShadow = head.castShadow = true;
+
+    const sword = new THREE.Group();
+    const bl = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.1, 0.02), bladeMat); bl.position.y = 0.65;
+    const gd = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.06), hiltMat); gd.position.y = 0.12;
+    sword.add(bl, gd);
+    sword.position.set(0.45, 1.05, -0.3);
+    group.add(body, head, sword);
+
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+    const cx = cv.getContext('2d');
+    cx.font = '700 34px Rajdhani, sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    cx.lineWidth = 6; cx.strokeStyle = 'rgba(0,0,0,.8)'; cx.strokeText(name, 128, 32);
+    cx.fillStyle = '#fff'; cx.fillText(name, 128, 32);
+    const tex = new THREE.CanvasTexture(cv);
+    const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    tag.scale.set(2.4, 0.6, 1); tag.position.y = 2.5;
+    group.add(tag);
+    scene.add(group);
+    return { id, name, mesh: group, sword, tx: 0, ty: EYE_HEIGHT, tz: 0, tyaw: 0, hp: 100, al: 1, block: 0, swing: -1, init: false };
+}
+function removeRemote(r) {
+    scene.remove(r.mesh);
+    r.mesh.traverse(o => { if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } if (o.geometry) o.geometry.dispose(); });
+    net.remotes.delete(r.id);
+}
+
+function setHp(hp) {
+    const prev = gameState.playerHp;
+    gameState.playerHp = hp;
+    $('hp-fill').style.width = (hp / gameState.maxHp * 100) + '%';
+    $('hp-text').innerText = `${Math.ceil(hp)} / ${gameState.maxHp}`;
+    if (hp < prev) { const v = $('vignette'); v.classList.add('hit'); setTimeout(() => v.classList.remove('hit'), 150); }
+}
+
+function onNetMessage(m) {
+    switch (m.t) {
+        case 'welcome':
+            net.id = m.id; net.spawn = { x: m.x, z: m.z }; net.on = true;
+            document.querySelector('.score-box .hud-title').textContent = 'УБИЙСТВА';
+            $('lb').style.display = 'block';
+            startGame();
+            break;
+        case 'snap': applySnapshot(m.p); break;
+        case 'swing': { const r = net.remotes.get(m.id); if (r) r.swing = 0; break; }
+        case 'hitok': { const c = $('crosshair'); c.classList.add('hit'); setTimeout(() => c.classList.remove('hit'), 150); break; }
+        case 'kill': {
+            const d = document.createElement('div');
+            d.textContent = `${m.k} ⚔ ${m.v}`;
+            $('feed').appendChild(d);
+            setTimeout(() => d.remove(), 5000);
+            while ($('feed').children.length > 5) $('feed').firstChild.remove();
+            break;
+        }
+        case 'died':
+            net.dead = true; gameState.isBlocking = false;
+            for (const k in keys) keys[k] = false;
+            mobileJump = false; moveVector.set(0, 0, 0);
+            banner('ВЫ ПОГИБЛИ');
+            break;
+        case 'respawn':
+            net.dead = false; banner('');
+            player.position.set(m.x, getSurfaceHeight(m.x, m.z) + EYE_HEIGHT, m.z);
+            player.vy = 0; player.grounded = true; player.bhop = 1; player.groundTime = 999;
+            playerHolder.position.copy(player.position);
+            break;
+    }
+}
+
+let lbSig = '';
+function applySnapshot(list) {
+    const seen = new Set();
+    for (const p of list) {
+        seen.add(p.id);
+        if (p.id === net.id) {
+            if (p.hp !== gameState.playerHp) setHp(p.hp);
+            $('score-val').innerText = p.k;
+            continue;
+        }
+        let r = net.remotes.get(p.id);
+        if (!r) { r = makeRemote(p.id, p.n); net.remotes.set(p.id, r); }
+        Object.assign(r, { tx: p.x, ty: p.y, tz: p.z, tyaw: p.yaw, hp: p.hp, al: p.al, block: p.b });
+        if (!r.init) { r.init = true; r.mesh.position.set(p.x, p.y - EYE_HEIGHT, p.z); r.mesh.rotation.y = p.yaw; }
+    }
+    for (const r of [...net.remotes.values()]) if (!seen.has(r.id)) removeRemote(r);
+
+    const rows = list.slice().sort((a, b) => b.k - a.k || a.d - b.d).slice(0, 6);
+    const sig = JSON.stringify(rows.map(r => [r.id, r.n, r.k, r.d]));
+    if (sig === lbSig) return;
+    lbSig = sig;
+    const box = $('lb-rows'); box.textContent = '';
+    for (const r of rows) {
+        const row = document.createElement('div'); row.className = 'row' + (r.id === net.id ? ' me' : '');
+        const a = document.createElement('span'); a.textContent = r.n;
+        const b = document.createElement('span'); b.textContent = `${r.k} / ${r.d}`;
+        row.append(a, b); box.appendChild(row);
+    }
+}
+
+function updateNet(dt) {
+    net.sendAcc += dt;
+    if (gameStarted && !net.dead && net.sendAcc >= 0.05) {
+        net.sendAcc = 0;
+        const r2 = v => Math.round(v * 100) / 100;
+        netSend({ t: 'state', x: r2(player.position.x), y: r2(player.position.y), z: r2(player.position.z), yaw: r2(player.yaw), pitch: r2(player.pitch), b: gameState.isBlocking ? 1 : 0 });
+    }
+    const k = Math.min(1, dt * 12);
+    for (const r of net.remotes.values()) {
+        const m = r.mesh;
+        m.visible = !!r.al;
+        m.position.x += (r.tx - m.position.x) * k;
+        m.position.z += (r.tz - m.position.z) * k;
+        m.position.y += (r.ty - EYE_HEIGHT - m.position.y) * k;
+        const d = ((r.tyaw - m.rotation.y + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        m.rotation.y += d * k;
+        if (r.swing >= 0) { r.swing += dt * 3.5; if (r.swing >= 1) r.swing = -1; }
+        if (r.swing >= 0) {
+            r.sword.position.set(0.45, 1.05, -0.3);
+            r.sword.rotation.set(-0.6 - 1.6 * Math.sin(Math.PI * r.swing), 0, 0);
+        } else if (r.block) {
+            r.sword.position.set(0.1, 1.2, -0.4);
+            r.sword.rotation.set(-0.3, 0, 1.3);
+        } else {
+            r.sword.position.set(0.45, 1.05, -0.3);
+            r.sword.rotation.set(-0.6, 0, 0);
+        }
+    }
+}
+
+/* ---------- Игровой цикл ---------- */
+const clock = new THREE.Clock();
+const UP = new THREE.Vector3(0, 1, 0);
+const moveDir = new THREE.Vector3();
+
+function updatePlayer(dt) {
+    // Зажатый пробел / кнопка: прыжок срабатывает сам в момент приземления
+    if (player.grounded && (keys.Space || mobileJump)) tryJump();
+
+    moveDir.set(0, 0, 0);
+    if (isMobile) {
+        moveDir.copy(moveVector);
+    } else {
+        if (keys.KeyW) moveDir.z -= 1;
+        if (keys.KeyS) moveDir.z += 1;
+        if (keys.KeyA) moveDir.x -= 1;
+        if (keys.KeyD) moveDir.x += 1;
+    }
+    if (moveDir.lengthSq() > 1) moveDir.normalize();
+    moveDir.applyAxisAngle(UP, player.yaw);   // только yaw, поэтому взгляд вверх/вниз не тянет игрока в пол
+
+    const sp = (keys.ShiftLeft ? player.runSpeed : player.speed) * player.bhop * dt;
+    player.position.x += moveDir.x * sp;
+    player.position.z += moveDir.z * sp;
+
+    resolveCollisions(player.position, player.radius);
+    player.position.x = Math.max(-ARENA_LIMIT, Math.min(ARENA_LIMIT, player.position.x));
+    player.position.z = Math.max(-ARENA_LIMIT, Math.min(ARENA_LIMIT, player.position.z));
+
+    // Высота: всегда считается от поверхности, плавно, без падения
+    const targetY = getSurfaceHeight(player.position.x, player.position.z) + EYE_HEIGHT;
+    if (player.grounded) {
+        player.groundTime += dt;
+        if (player.groundTime > BHOP_WINDOW) player.bhop = 1;   // стоял на земле дольше окна — серия прервана
+        player.position.y += (targetY - player.position.y) * Math.min(1, dt * 15);
+        // сошли с края платформы — начинаем падать, а не «прилипаем» к полу
+        if (player.position.y - targetY > 0.3) player.grounded = false;
+    } else {
+        player.vy -= GRAVITY * dt;
+        player.position.y += player.vy * dt;
+        if (player.position.y <= targetY && player.vy <= 0) {   // приземление
+            player.position.y = targetY;
+            player.vy = 0;
+            player.grounded = true;
+            player.groundTime = 0;
+        }
+    }
+
+    // Страховка от NaN и любых выходов за карту
+    if (![player.position.x, player.position.y, player.position.z].every(Number.isFinite) || player.position.y < 0.5) {
+        player.position.set(SPAWN.x, EYE_HEIGHT, SPAWN.z);
+    }
+    playerHolder.position.copy(player.position);
+
+    const label = 'x' + player.bhop.toFixed(1);
+    if (label !== updatePlayer.last) { updatePlayer.last = label; $('speed-val').innerText = label; }
+}
+
+function updateSword(dt) {
+    if (gameState.isAttacking) {
+        swingProgress += dt * 12;
+        const sa = Math.sin(Math.min(swingProgress, Math.PI));
+        swordGroup.position.set(0.35 - sa * 0.5, -0.3 + sa * 0.2, -0.55 + sa * 0.2);
+        swordGroup.rotation.set(0.1 + sa * 0.8, -0.2 - sa * 1.5, -0.1 + sa * 1.2);
+    } else if (gameState.isBlocking) {
+        swordGroup.position.lerp(new THREE.Vector3(0, -0.15, -0.4), 0.2);
+        swordGroup.rotation.set(0.4, -0.8, 1.2);
+    } else {
+        const bob = Math.sin(clock.elapsedTime * 3) * 0.015;
+        swordGroup.position.lerp(new THREE.Vector3(0.35, -0.3 + bob, -0.55), 0.15);
+        swordGroup.rotation.set(0.1, -0.2, -0.1);
+    }
+}
+
+function updateBots(dt) {
+    for (const bot of bots) {
+        const p = bot.mesh.position;
+        const dx = player.position.x - p.x, dz = player.position.z - p.z;
+        const dist = Math.hypot(dx, dz);
+        bot.mesh.rotation.y = Math.atan2(dx, dz);
+
+        if (dist > 1.8) {
+            p.x += dx / dist * bot.speed * dt;
+            p.z += dz / dist * bot.speed * dt;
+            // не слипаться друг с другом
+            for (const o of bots) if (o !== bot) {
+                const ox = p.x - o.mesh.position.x, oz = p.z - o.mesh.position.z, od = Math.hypot(ox, oz);
+                if (od > 0.001 && od < 1.2) { p.x += ox / od * (1.2 - od) * 0.5; p.z += oz / od * (1.2 - od) * 0.5; }
+            }
+            resolveCollisions(p, bot.radius);
+            p.x = Math.max(-ARENA_LIMIT, Math.min(ARENA_LIMIT, p.x));
+            p.z = Math.max(-ARENA_LIMIT, Math.min(ARENA_LIMIT, p.z));
+        } else if (!bot.attackCooldown) {
+            bot.attackCooldown = true;
+            setTimeout(() => {
+                if (!gameState.over && bots.includes(bot) && Math.hypot(p.x - player.position.x, p.z - player.position.z) <= 2.2) takeDamage(20);
+            }, 250);
+            setTimeout(() => bot.attackCooldown = false, 1400 + Math.random() * 800);
+        }
+        p.y = getSurfaceHeight(p.x, p.z);
+    }
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);   // ограничение, чтобы лаг не телепортировал игрока
+    if (gameStarted && !gameState.over && !paused) {
+        if (!net.dead) updatePlayer(dt);
+        updateSword(dt);
+        updateBots(dt);
+    }
+    if (net.on) updateNet(dt);
+    renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
