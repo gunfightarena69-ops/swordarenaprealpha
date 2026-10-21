@@ -4,7 +4,16 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 
 const PORT = process.env.PORT || 3000;
 const MAX_PLAYERS = 16, MAX_MSG = 4096, TICK_MS = 50, RESPAWN_MS = 3000;
-const HIT_RANGE = 2.8, SWING_DELAY = 120, ATTACK_COOLDOWN = 450, DAMAGE = 45, BLOCK_DAMAGE = 9;
+// Оружие (параметры продублированы в клиенте): урон, интервал между выстрелами (мс), дробинок, разброс
+const WEAPONS = [
+    { dmg: 22, rate: 280, pellets: 1, spread: 0.012 },   // пистолет
+    { dmg: 13, rate: 100, pellets: 1, spread: 0.035 },   // автомат
+    { dmg: 9,  rate: 850, pellets: 8, spread: 0.09 },    // дробовик
+    { dmg: 100, rate: 1400, pellets: 1, spread: 0.045, minMult: 0.04 }   // снайперка (minMult — разброс при прицеливании)
+];
+const HEAD_MULT = 2, MAX_RANGE = 80;
+const PILLARS = [];   // колонны 3x3, высота 8
+for (const x of [-18, 18]) for (const z of [-18, 18]) PILLARS.push([[x - 1.5, 0, z - 1.5], [x + 1.5, 8, z + 1.5]]);
 const LIMIT = 33;
 const SPAWNS = [[0, 15], [0, -15], [15, 0], [-15, 0], [25, 25], [-25, 25], [25, -25], [-25, -25], [8, 26], [-8, -26]];
 
@@ -123,36 +132,110 @@ function onMessage(c, text) {
         const yaw = num(m.yaw, -1e4, 1e4), pitch = num(m.pitch, -2, 2);
         if (x === null || y === null || z === null || yaw === null || pitch === null) return;
         Object.assign(c, { x, y, z, yaw, pitch, block: m.b ? 1 : 0 });
-    } else if (m.t === 'attack' && c.alive && now - c.lastAtk >= ATTACK_COOLDOWN && !c.block) {
+    } else if (m.t === 'shoot' && c.alive) {
+        const w = WEAPONS[m.w | 0];
+        const dx = num(m.dx, -1, 1), dy = num(m.dy, -1, 1), dz = num(m.dz, -1, 1);
+        if (!w || dx === null || dy === null || dz === null) return;
+        if (now - c.lastAtk < w.rate * 0.85) return;   // скорострельность проверяет сервер
         c.lastAtk = now;
-        broadcast({ t: 'swing', id: c.id });
-        setTimeout(() => { if (c.open && c.alive) resolveHit(c); }, SWING_DELAY);
+        const len = Math.hypot(dx, dy, dz);
+        if (len < 0.5) return;
+        broadcast({ t: 'shot', id: c.id });
+        let mult = num(m.m, w.minMult || 1, 4);
+        if (mult === null) mult = 1;
+        if (c.y - 1.7 > surfaceH(c.x, c.z) + 0.2) mult = Math.max(mult, 3.2);   // в прыжке разброс нельзя «отключить»
+        shoot(c, w, [dx / len, dy / len, dz / len], mult);
     }
 }
 
-function resolveHit(a) {
-    const lx = -Math.sin(a.yaw), lz = -Math.cos(a.yaw);
-    let hit = false;
-    for (const q of clients) {
-        if (q === a || !q.joined || !q.alive) continue;
-        const dx = q.x - a.x, dz = q.z - a.z, dist = Math.hypot(dx, dz);
-        if (dist > HIT_RANGE || Math.abs(q.y - a.y) > 2) continue;
-        if (dist > 0.5 && (dx / dist) * lx + (dz / dist) * lz < 0.2) continue;   // цель должна быть перед атакующим
-        hit = true;
-        q.hp -= q.block ? BLOCK_DAMAGE : DAMAGE;
-        if (q.hp <= 0) {
-            q.hp = 0; q.alive = false; q.deaths++; a.kills++;
-            broadcast({ t: 'kill', k: a.name, v: q.name });
-            send(q, { t: 'died' });
-            setTimeout(() => {
-                if (!q.open) return;
-                const s = pickSpawn(q);
-                Object.assign(q, { alive: true, hp: 100, x: s[0], z: s[1], y: 1.7, block: 0 });
-                send(q, { t: 'respawn', x: s[0], z: s[1] });
-            }, RESPAWN_MS);
+// ---- геометрия лучей ----
+function raySphere(o, d, cx, cy, cz, r) {
+    const ox = o[0] - cx, oy = o[1] - cy, oz = o[2] - cz;
+    const b = ox * d[0] + oy * d[1] + oz * d[2], c = ox * ox + oy * oy + oz * oz - r * r, h = b * b - c;
+    if (h < 0) return null;
+    const t = -b - Math.sqrt(h);
+    return t >= 0 ? t : null;
+}
+function rayCyl(o, d, cx, cz, r, y0, y1) {   // вертикальный цилиндр с торцами
+    const ox = o[0] - cx, oz = o[2] - cz, a = d[0] * d[0] + d[2] * d[2];
+    let best = null;
+    if (a > 1e-9) {
+        const b = ox * d[0] + oz * d[2], c = ox * ox + oz * oz - r * r, h = b * b - a * c;
+        if (h >= 0) {
+            const sq = Math.sqrt(h);
+            for (const t of [(-b - sq) / a, (-b + sq) / a]) {
+                const y = o[1] + d[1] * t;
+                if (t >= 0 && y >= y0 && y <= y1) { best = t; break; }
+            }
         }
     }
-    if (hit) send(a, { t: 'hitok' });
+    if (Math.abs(d[1]) > 1e-9) for (const y of [y0, y1]) {
+        const t = (y - o[1]) / d[1];
+        if (t >= 0 && (best === null || t < best)) { const x = ox + d[0] * t, z = oz + d[2] * t; if (x * x + z * z <= r * r) best = t; }
+    }
+    return best;
+}
+function rayBox(o, d, mn, mx) {
+    let t0 = 0, t1 = Infinity;
+    for (let i = 0; i < 3; i++) {
+        if (Math.abs(d[i]) < 1e-9) { if (o[i] < mn[i] || o[i] > mx[i]) return null; }
+        else {
+            let a = (mn[i] - o[i]) / d[i], b = (mx[i] - o[i]) / d[i];
+            if (a > b) { const tmp = a; a = b; b = tmp; }
+            t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+            if (t0 > t1) return null;
+        }
+    }
+    return t0;
+}
+function obstacleT(o, d) {   // ближайшее препятствие: пол, колонны, центральный столб
+    let t = MAX_RANGE;
+    if (d[1] < -1e-6) t = Math.min(t, -o[1] / d[1]);
+    for (const bx of PILLARS) { const h = rayBox(o, d, bx[0], bx[1]); if (h !== null && h < t) t = h; }
+    const c = rayCyl(o, d, 0, 0, 1.5, 1.5, 9.5);
+    if (c !== null && c < t) t = c;
+    return t;
+}
+
+function surfaceH(x, z) { const r = Math.hypot(x, z); return r <= 8 ? 1.5 : r >= 10 ? 0 : 1.5 * (10 - r) / 2; }
+
+function shoot(a, w, dir, mult) {
+    const o = [a.x, a.y, a.z];
+    let hitAny = false;
+    for (let i = 0; i < w.pellets; i++) {
+        const s = w.spread * mult;
+        let d = [dir[0] + (Math.random() - 0.5) * 2 * s, dir[1] + (Math.random() - 0.5) * 2 * s, dir[2] + (Math.random() - 0.5) * 2 * s];
+        const l = Math.hypot(d[0], d[1], d[2]); d = [d[0] / l, d[1] / l, d[2] / l];
+        const tObs = obstacleT(o, d);
+        let best = null;
+        for (const q of clients) {
+            if (q === a || !q.joined || !q.alive) continue;
+            const feet = q.y - 1.7;
+            const tHead = raySphere(o, d, q.x, feet + 1.8, q.z, 0.35);
+            const tBody = rayCyl(o, d, q.x, q.z, 0.5, feet + 0.1, feet + 1.65);
+            if (tHead === null && tBody === null) continue;
+            const head = tHead !== null && (tBody === null || tHead <= tBody + 0.2);
+            const t = head ? tHead : tBody;
+            if (t < tObs && (!best || t < best.t)) best = { q, t, head };
+        }
+        if (best) { hitAny = true; applyDamage(a, best.q, w.dmg * (best.head ? HEAD_MULT : 1), best.head); }
+    }
+    if (hitAny) send(a, { t: 'hitok' });
+}
+
+function applyDamage(a, q, dmg, head) {
+    if (!q.alive) return;
+    q.hp -= dmg;
+    if (q.hp > 0) return;
+    q.hp = 0; q.alive = false; q.deaths++; a.kills++;
+    broadcast({ t: 'kill', k: a.name, v: q.name, h: head ? 1 : 0 });
+    send(q, { t: 'died' });
+    setTimeout(() => {
+        if (!q.open) return;
+        const s = pickSpawn(q);
+        Object.assign(q, { alive: true, hp: 100, x: s[0], z: s[1], y: 1.7, block: 0 });
+        send(q, { t: 'respawn', x: s[0], z: s[1] });
+    }, RESPAWN_MS);
 }
 
 setInterval(() => {
